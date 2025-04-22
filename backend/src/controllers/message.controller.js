@@ -41,9 +41,10 @@ export const sendMessage = async (req, res) => {
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
+    console.log("Sending message:", { text, receiverId, senderId });
+
     let imageUrl;
     if (image) {
-      // Upload base64 image to cloudinary
       const uploadResponse = await cloudinary.uploader.upload(image);
       imageUrl = uploadResponse.secure_url;
     }
@@ -57,9 +58,22 @@ export const sendMessage = async (req, res) => {
 
     await newMessage.save();
 
+    // Get socket IDs for both sender and receiver
+    const senderSocketId = getReceiverSocketId(senderId);
     const receiverSocketId = getReceiverSocketId(receiverId);
+
+    console.log("Socket IDs:", { senderSocketId, receiverSocketId });
+
+    // Emit to receiver if online
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
+      console.log("Message emitted to receiver:", receiverSocketId);
+    }
+
+    // Emit to sender if online (for real-time update)
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("newMessage", newMessage);
+      console.log("Message emitted to sender:", senderSocketId);
     }
 
     res.status(201).json(newMessage);

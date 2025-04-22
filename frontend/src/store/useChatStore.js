@@ -33,10 +33,12 @@ export const useChatStore = create((set, get) => ({
       set({ isMessagesLoading: false });
     }
   },
+
   sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
     try {
       const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, messageData);
+      // Update messages immediately for the sender
       set({ messages: [...messages, res.data] });
     } catch (error) {
       toast.error(error.response.data.message);
@@ -48,20 +50,41 @@ export const useChatStore = create((set, get) => ({
     if (!selectedUser) return;
 
     const socket = useAuthStore.getState().socket;
+    if (!socket) {
+      console.error("Socket not connected");
+      return;
+    }
+
+    // Remove any existing message listeners
+    socket.off("newMessage");
 
     socket.on("newMessage", (newMessage) => {
-      const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
+      console.log("New message received:", newMessage);
+      
+      // Check if the message is for the current conversation
+      const isMessageForCurrentConversation = 
+        (newMessage.senderId === selectedUser._id && newMessage.receiverId === get().authUser._id) ||
+        (newMessage.receiverId === selectedUser._id && newMessage.senderId === get().authUser._id);
 
-      set({
-        messages: [...get().messages, newMessage],
-      });
+      if (isMessageForCurrentConversation) {
+        set((state) => {
+          // Check if message already exists to prevent duplicates
+          const messageExists = state.messages.some(msg => msg._id === newMessage._id);
+          if (messageExists) return state;
+          
+          return {
+            messages: [...state.messages, newMessage],
+          };
+        });
+      }
     });
   },
 
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
+    if (socket) {
+      socket.off("newMessage");
+    }
   },
 
   setSelectedUser: (selectedUser) => set({ selectedUser }),
